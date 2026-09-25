@@ -30,7 +30,7 @@ jobs:
     name: copilot CLI reachable
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install the Copilot CLI
         run: npm install -g @github/copilot
@@ -65,7 +65,7 @@ jobs:
     name: claude CLI reachable
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install the Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
