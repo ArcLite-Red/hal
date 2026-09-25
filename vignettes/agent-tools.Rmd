@@ -1,0 +1,135 @@
+---
+title: "Agent tools"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Agent tools}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+hal connects to a coding agent with built-in tools for reading code,
+editing files, searching your codebase, and running commands. You can
+also register your own R functions as tools.
+
+## Built-in tools
+
+Always available — no registration needed:
+
+| Tool | What it does |
+|---|---|
+| view / Read | Read file contents |
+| grep / Grep | Search file contents |
+| glob / Glob | Find files by pattern |
+| edit / Edit | Edit an existing file |
+| create / Write | Create a new file |
+| bash / Bash | Run shell commands |
+
+The agent decides when to use them — you just describe what you want:
+
+```r
+hal("Find all functions that call the database and list them")
+hal("Add error handling to the process_data function")
+hal("Run the tests and fix any failures")
+```
+
+## eval_r — the R bridge
+
+hal registers `eval_r` in every session so the agent can run R code in
+your live session, not a subprocess copy:
+
+```r
+df <- mtcars
+
+hal("Which rows in df have mpg above the median?", use_env = TRUE)
+```
+
+`use_env = TRUE` injects names + types from your environment into the
+prompt; the agent reads actual values via `eval_r`. The default
+(`use_env = NULL`) auto-detects when prompt tokens match env objects.
+
+## Plot vision
+
+When `eval_r` code draws a plot, hal captures it as a PNG and attaches
+it to the tool result as an image — the model sees the rendered chart,
+not just the code that made it:
+
+```r
+df <- mtcars
+hal("Plot mpg vs wt and tell me what stands out")
+#> i hal: plot captured for the model.
+```
+
+| Backend | Plot vision |
+|---|---|
+| vscode  | Yes (bundled hal-bridge >= 0.1.4; if the selected model rejects images, the bridge falls back to text automatically) |
+| claude  | Yes (MCP image content blocks) |
+| copilot | No — text-only until the CLI's image forwarding is verified |
+
+Details worth knowing:
+
+- Returned `ggplot`/`lattice` objects are printed to your device first,
+  so they appear in your plots pane as usual — and a ggplot that fails
+  to render reports the error to the model instead of failing silently.
+- One image per eval: the final page (a `par(mfrow = ...)` grid is one
+  page and is captured whole).
+- Plots written to file devices your code opens itself (`png()`,
+  `pdf()`) are not echoed.
+- Disable globally with `hal_configure(plot_vision = FALSE)`.
+
+## Register your own tools
+
+Turn any R function into a tool:
+
+```r
+hal_register_tool(
+  fun = function(city) paste("Sunny, 72F in", city),
+  name = "get_weather",
+  description = "Get current weather for a city",
+  types = list(city = "string")
+)
+
+hal("What's the weather in Austin?")
+```
+
+Register tools **before** the first `hal()` / `$chat()` call — they're
+passed to the CLI at startup.
+
+Bulk registration:
+
+```r
+hal_register_package_tools("dplyr")
+hal_register_tool_specs(winston::timelog_tool_specs())
+```
+
+ellmer `ToolDef` objects are accepted directly:
+
+```r
+chat <- hal_chat()
+chat$register_tool(my_ellmer_tool)
+```
+
+## Permissions, in brief
+
+Read tools auto-allow. Writes and shell commands trigger a permission
+request. The default policy auto-allows everything; switch to
+auto-deny for read-only behavior:
+
+```r
+hal_configure(permission_policy = "auto-deny")
+```
+
+For custom logic (logging, interactive approval, selective allow), pass
+a function. See `?hal_configure` for the full reference.
+
+## Next
+
+- `?hal_register_tool` — full tool builder reference
+- `?hal_configure` — governance settings (policies, denylist, timeout)

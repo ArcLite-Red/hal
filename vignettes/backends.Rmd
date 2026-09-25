@@ -1,0 +1,258 @@
+---
+title: "Backends: vscode, Copilot, Claude"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Backends: vscode, Copilot, Claude}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+hal speaks to three different agent transports behind a common R interface:
+the Positron `vscode.lm` API (via the bundled hal-bridge extension), GitHub
+Copilot CLI, and Anthropic Claude Code. You pick per session; everything else
+-- pipe verbs, custom tools, `use_env`, governance -- works the same.
+
+The default is resolved at call time: `vscode` if you're inside Positron
+(`POSITRON_VERSION` is set), `copilot` otherwise. Set `options(hal.backend =
+"...")` to override globally.
+
+| | vscode | Copilot | Claude |
+|---|---|---|---|
+| Transport | Localhost HTTP to hal-bridge extension | ACP server (long-lived, JSON-RPC) | `claude -p` per turn, resumes via uuid |
+| Auth | Your Positron Copilot sign-in (reused) | GitHub Copilot subscription | Claude.ai subscription (OAuth) |
+| Install | `hal_install_bridge()` (bundled VSIX, no download) | `hal_setup()` installs Copilot CLI | Download Claude Code, run `claude` once |
+| Models | Whatever `vscode.lm` exposes to your session | 17 (GPT, Claude, Gemini) | 3 (Haiku, Sonnet, Opus) |
+| Mid-session model switch | Yes (via `vscode.lm` model id) | Yes, preserves context | No (must reset) |
+| Session modes | Agent only | Agent / Plan / Autopilot | Agent only (others warn) |
+| Quota visibility | -- (inherits Copilot) | -- (flat subscription) | `hal_quota()` (5-hour window) |
+| `eval_r` transport | In-process (no MCP subprocess) | MCP stdio subprocess | MCP stdio subprocess |
+| Where it runs | Positron only | Anywhere (RStudio, VS Code, terminal R) | Anywhere |
+| Typical cost | Flat (subscription) | Flat monthly | ~$0.005–0.03 per call (Haiku) |
+
+## Pick a backend
+
+```r
+library(hal)
+
+hal_configure(backend = "vscode")    # default in Positron
+hal_configure(backend = "copilot")   # default elsewhere
+hal_configure(backend = "claude")
+
+hal_config()$backend
+```
+
+The setting takes effect on the next session init -- call `hal_reset()` if you
+already have an active session and want to swap backends immediately.
+
+Everything after that point is identical:
+
+```r
+hal("explain this error")
+mtcars |> hal_ask("summarize in 3 bullets")
+iris |> hal_do("add petal_area = Petal.Length * Petal.Width")
+```
+
+## vscode: when to pick it
+
+- You're using Positron (it's the smart default there).
+- You want zero extra CLI installs -- no Node.js, no `@github/copilot`
+  npm package, no `claude` binary.
+- You want to reuse your existing Positron Copilot sign-in -- no separate
+  OAuth flow, no API keys.
+- You're sensitive to install friction on teammate machines: the bridge
+  ships inside hal itself (`inst/extdata/hal-bridge-X.Y.Z.vsix`) and
+  installs via the Positron CLI in one call.
+- You want `eval_r` to round-trip through R directly without an MCP
+  subprocess -- the bridge speaks HTTP to your R session, so tool calls
+  don't fork another process.
+
+Setup:
+
+```r
+library(hal)
+hal_install_bridge()                  # one-shot: installs bundled VSIX
+# Fully quit Positron and reopen -- "Reload Window" is not enough on a
+# fresh install; the extension host only loads new extensions cold.
+hal_bridge_status()                   # confirms the extension is live
+hal_available()                       # TRUE when port file + bridge are up
+```
+
+`hal_install_bridge()` requires only the Positron CLI on `PATH` (or
+`POSITRON_BIN` env var). No GitHub auth, no network call.
+
+Models surface whatever `vscode.lm` exposes to your Positron Copilot
+session:
+
+```r
+hal_models()                          # lists what vscode.lm has registered
+hal("explain this error", model = "claude-3-5-sonnet")
+```
+
+If models you expect are missing, that's a Positron / Copilot extension
+state issue -- restart Positron or sign in again from the Copilot pane.
+
+## Copilot: when to pick it
+
+- You already have a Copilot subscription -- nothing extra to install beyond
+  the CLI.
+- You want model variety (GPT-5, Gemini, multiple Claude versions) all through
+  one endpoint.
+- You want mid-session model switching -- start with a cheap 0x model for
+  exploration, hot-swap to Opus for hard reasoning, no context loss.
+- You rely on Plan or Autopilot mode.
+
+Setup:
+
+```r
+library(hal)
+hal_setup()                           # installs Copilot CLI + guides login
+hal_available()                       # TRUE when ready
+```
+
+## Claude: when to pick it
+
+- You have a Claude.ai subscription and want to drive it from R without an
+  API key.
+- You care about the Claude Code ecosystem -- skills, hooks, subagents,
+  MCP servers plug in directly.
+- You want live quota visibility (`hal_quota()` shows the 5-hour window
+  status).
+- You're doing many disposable pipe-verb calls and want Haiku's `$0.005`
+  per-resume price tag.
+
+Setup:
+
+```bash
+# Install Claude Code from https://claude.ai/download
+claude               # run once interactively to complete OAuth
+```
+
+```r
+hal_configure(backend = "claude")
+hal_available()                       # TRUE when `claude` is on PATH
+hal("hello")                          # Haiku 4.5 by default
+```
+
+### Per-entry-point model defaults
+
+The Claude backend tunes its default model per entry point:
+
+| Entry point | Default | Why |
+|---|---|---|
+| `hal()` | `claude-sonnet-4-5-20250929` | Multi-turn amortizes cost |
+| `hal_ask()`, `hal_do()` | `claude-haiku-4-5-20251001` | Disposable, cost-sensitive |
+
+Override globally or per call:
+
+```r
+hal_configure(default_model = "claude-opus-4-5-20250902")
+
+hal("deep reasoning", model = "claude-opus-4-5-20250902")
+```
+
+### Session lifecycle
+
+The Claude backend spawns a fresh `claude -p` subprocess per turn. The first
+call uses `--session-id <uuid>` to create a session; every subsequent call in
+the same R session uses `--resume <uuid>`. hal stores the uuid for you.
+
+Cost tiers we measured on Haiku 4.5:
+
+| Tier | When | Cost |
+|---|---|---|
+| Cold | Empty account cache | $0.05–0.07 |
+| Warm | Recent Claude Code activity | $0.02–0.03 |
+| Resumed | Successive calls in the same session | $0.005 |
+
+Extrapolated per-model (first call / resumed call):
+
+| Model | First | Resumed |
+|---|---|---|
+| Haiku 4.5 | $0.02–0.03 | $0.005 |
+| Sonnet 4.6 | $0.05–0.07 | $0.01–0.015 |
+| Opus 4.7 | $0.12–0.17 | $0.03–0.04 |
+
+Note: `total_cost_usd` is notional on subscription auth -- you pay in tokens
+against the 5-hour window, not dollars. It's still a useful burn-rate proxy.
+
+## Quota: `hal_quota()`
+
+Every Claude response stream carries a `rate_limit_event` with the 5-hour
+window status. `hal_quota()` surfaces it:
+
+```r
+hal("hello")
+hal_quota()
+#> -- hal quota (claude) ----------------------------------------
+#> i Window: "five_hour"
+#> v Status: "allowed"
+#> i Resets: 2026-04-23 17:30:00 PDT
+#> i Overage: "allowed"
+```
+
+`hal_quota()` returns `NULL` on the Copilot backend (flat subscription --
+there's nothing to show).
+
+Fields returned as a `hal_quota` list:
+
+- `type` -- currently always `"five_hour"`
+- `status` -- `"allowed"` or `"rate_limited"`
+- `resets_at` -- POSIXct; when the window clears
+- `overage_status` -- `"allowed"` or `"rejected"`
+- `overage_disabled_reason` -- e.g. `"out_of_credits"` when relevant
+- `backend` -- `"claude"`
+
+## What Claude doesn't support
+
+hal's Claude client stubs these with a warning rather than pretending:
+
+```r
+chat <- hal_chat()
+
+chat$switch_model("claude-opus-4-5-20250902")
+#> ! Mid-session model switching not available on Claude backend.
+#> i Start a new session with `hal_reset()` and a different default model.
+
+chat$set_mode("plan")
+#> ! Session modes (plan/autopilot) not available on Claude backend.
+```
+
+To switch models on Claude, reset the session:
+
+```r
+hal_configure(default_model = "claude-opus-4-5-20250902")
+hal_reset()
+```
+
+## Mock CLI for offline testing
+
+The Copilot and Claude backends each ship with a mock CLI under
+`inst/mock-cli/` so CI and local unit tests don't need network, login, or
+credits:
+
+- `inst/mock-cli/mock_copilot.R` -- NDJSON ACP server
+- `inst/mock-cli/mock_claude.R` -- stream-json per-turn
+
+The vscode backend has no mock equivalent -- its transport is a real
+localhost HTTP server inside Positron. vscode-backend tests stub the
+bridge at the R level (port file + handler shim) rather than running a
+fake extension.
+
+Scenarios are passed as the first positional arg (`basic`, `echo`, `thinking`,
+`tool_use`, `tool_roundtrip`, `multi_turn`, `rate_limit`, `error`, `slow`).
+See `tests/testthat/helper-mock-client.R` for the harness pattern.
+
+## See also
+
+- `?hal_configure` -- the `backend` argument and all other session settings
+- `?hal_quota` -- structure of the returned object
+- `vignette("getting-started")` -- end-to-end walkthrough
+- `vignette("agent-tools")` -- built-in tools, `eval_r`, custom MCP tools

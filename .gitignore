@@ -1,0 +1,28 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.httr-oauth
+.DS_Store
+.quarto
+_cache/
+README.html
+inst/doc
+docs/
+
+/.quarto/
+**/*.quarto_ipynb
+
+.vscode/
+.claude/
+hal.md
+# Ignore dev/ contents rather than the directory itself -- git cannot
+# re-include a file whose parent directory is excluded, and the two security
+# docs below must be re-includable: vignette("safety") points readers at them
+# for the full threat model, so they have to exist in the public repo. They
+# stay out of the CRAN tarball via .Rbuildignore's ^dev$ entry.
+dev/*
+!dev/security_model.Rmd
+!dev/hardening.Rmd
+!dev/data_governance.Rmd
+CLAUDE.md

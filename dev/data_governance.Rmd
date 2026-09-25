@@ -1,0 +1,195 @@
+---
+title: "hal — Data governance statement"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Data governance statement}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+> Written for security, privacy, and IT reviewers evaluating hal for use inside
+> an organisation. It states what data leaves the machine, where it goes, what
+> hal stores, and how to restrict or disable each of those. Every claim here is
+> checkable against the source — see **Verifying these claims** at the end.
+>
+> Companion documents: `dev/security_model.Rmd` (threat model — what is and
+> isn't a security boundary) and `dev/hardening.Rmd` (configuration recipes).
+
+# 1. Summary
+
+hal is an R package that lets a user drive an **already-installed** AI coding
+assistant from the R console. It is a client, not a service.
+
+hal itself opens **no remote network connections**. The only socket R opens is
+to `127.0.0.1` (the local Positron bridge, vscode backend only). All traffic to
+a model provider is made by the vendor's own CLI — GitHub Copilot CLI or
+Anthropic Claude Code — running as a local subprocess under the user's own
+existing sign-in.
+
+Practically: **if your organisation has already approved GitHub Copilot or
+Claude Code for developer use, hal does not introduce a new data-egress
+vendor.** It changes which text is sent, not where it goes.
+
+# 2. What hal is not
+
+- Not a model host. It runs no inference and ships no model weights.
+- Not a credential store. It holds no provider API key and authenticates to
+  nothing. It reads certain credential environment variables locally, but only
+  to stop their values being transmitted — see §6.
+- Not a telemetry client. It contacts no Anthropic-, GitHub-, or author-operated
+  endpoint for analytics, licensing, update checks, or crash reporting.
+- Not a security boundary. Its guardrails reduce accidents, not determined
+  misuse — see `dev/security_model.Rmd`.
+
+# 3. Data flow by backend
+
+A user selects one backend per session.
+
+| Backend | Transport from R | Who makes the remote call | Destination | Authentication |
+|---|---|---|---|---|
+| `vscode` | HTTP to `127.0.0.1:<port>` | Positron / VS Code (`vscode.lm`) | The model behind the user's Positron Copilot sign-in | The user's existing IDE sign-in |
+| `copilot` | stdio to a local subprocess | GitHub Copilot CLI | GitHub Copilot API | The user's existing Copilot sign-in |
+| `claude` | stdio to a local subprocess | Anthropic Claude Code CLI | Anthropic API | The user's existing Claude subscription sign-in |
+
+In every case hal hands text to a locally-installed vendor tool. It does not
+proxy, relay, mirror, or copy that traffic anywhere else.
+
+# 4. What is transmitted
+
+Sent to the selected provider as part of a request:
+
+| Item | When | Default |
+|---|---|---|
+| The user's prompt | Always | — |
+| System prompt (mode-aware, hal-authored) | Always | — |
+| Conversation history for the session | Multi-turn (`hal()`) | — |
+| A description of R objects in the calling environment — names, classes, dimensions, column names/types | When `use_env = TRUE`, or when auto-detection judges the prompt to reference them | Auto-detect |
+| **Results of `eval_r`** — output of R code the model asked to run, which may contain actual data values | When the model calls `eval_r` | Tool enabled |
+| **Plot images** (PNG) rendered by `eval_r` | vscode and claude backends | `plot_vision = TRUE` |
+| Contents of `hal.md`, if present in the working directory | First turn of a session | Read if present |
+| Custom tool results | When the user has registered tools and the model calls them | Opt-in |
+
+The two rows in bold are where **actual data values**, rather than metadata,
+can leave the machine. An organisation handling regulated data should treat
+`eval_r` as the control point.
+
+# 5. What is never transmitted by hal
+
+- Files not referenced by the prompt or read by a tool the model invoked.
+- Environment variables, credential files, SSH keys, or `.Renviron` contents.
+- Any identifier of the user, machine, or organisation added by hal.
+- Anything at all when no `hal()`, `hal_ask()`, or `hal_do()` call is made.
+  Loading the package transmits nothing.
+
+Note the vendor CLI is a separate program with its own behaviour and its own
+configuration; this section describes what **hal** sends, not the totality of
+what the CLI may send. Review the vendor's documentation for that.
+
+# 6. Credentials
+
+hal stores, reads, and transmits **no** API keys or tokens for any model
+provider. Authentication is entirely delegated to the vendor CLI or IDE, which
+manages its own credential storage outside hal.
+
+The single secret hal handles is a **local** bearer token for the Positron
+bridge (vscode backend). It is generated per bridge launch, read from a
+per-user application-data file, sent only to `127.0.0.1`, and is never logged
+or printed.
+
+A built-in **credential scanner** inspects outbound prompt text for recognised
+secret formats (GitHub PATs, OpenAI/Anthropic keys, AWS keys, Google API keys,
+Slack tokens and webhooks, PEM private keys, and generic `key = "value"` pairs).
+
+It additionally reads the values of 21 well-known credential environment
+variables — `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`, `DATABASE_URL`, and
+similar — **for the sole purpose of checking whether those values appear in
+text about to be transmitted**. This catches an organisation's real secrets
+even when they match no known format. The values are read in-process, compared,
+and used only to build the `[REDACTED]` replacement; they are never transmitted,
+logged, written to disk, or used to authenticate anything. The watch-list is
+`.HAL_SENSITIVE_ENV_VARS` in `R/governance.R`.
+
+> Its default action is `"warn"` — it **notifies but still transmits**. Set
+> `credential_action = "block"` (refuse) or `"redact"` (strip) to make it a
+> control rather than a notice.
+
+# 7. Local file writes
+
+| Path | Contents | When |
+|---|---|---|
+| `tempdir()` | IPC request/response JSON, generated MCP server script, tool definitions | While a session with tools is active; removed on `hal_reset()` or session end |
+| `hal.md` in the working directory | Project memory, created with a short header the user may edit or delete | Created only in **interactive** sessions, and announced when created |
+| Per-user app-data dir | hal-bridge port and token discovery file | Written by the bridge extension, not by hal |
+
+hal writes nothing to system directories, nothing outside these paths, and
+nothing at package install or load time.
+
+# 8. Network surface
+
+- **Outbound from R:** `http://127.0.0.1:<port>` only, vscode backend only.
+  The host is hardcoded; it is not user- or model-controllable.
+- **Inbound:** none. hal opens no listening socket. (The bridge extension, a
+  separate component, binds a localhost-only port with token auth.)
+- **Subprocesses:** the vendor CLI, plus an R subprocess hosting the MCP tool
+  server for the copilot and claude backends.
+
+# 9. Retention and vendor terms
+
+hal retains nothing beyond the local files in §7. Retention, training use, and
+regional processing of transmitted text are governed entirely by the agreement
+between the organisation (or user) and the model provider — GitHub or
+Anthropic. Those terms differ by plan, and enterprise agreements commonly
+differ from individual ones.
+
+**hal makes no representation about them.** Consult the provider's current
+terms for the specific plan in use.
+
+# 10. Controls available to an administrator
+
+```r
+hal_configure(
+  permission_policy = "ask",     # confirm before any tool call
+  credential_action = "block",   # refuse to transmit detected secrets
+  plot_vision       = FALSE,     # never transmit rendered images
+  eval_timeout      = 15
+)
+```
+
+To remove the ability to execute R and transmit data values entirely, restrict
+the `eval_r` tool surface via the denylist (`dev/hardening.Rmd` §3). To prevent
+all transmission, do not call hal — loading the package is inert.
+
+Backend choice is itself a control: `hal_configure(backend = ...)` pins traffic
+to whichever provider the organisation has approved.
+
+# 11. Verifying these claims
+
+A reviewer can confirm the central claims directly, without reading the whole
+source. From the package root:
+
+```sh
+# Every URL constructed in R. Expect 127.0.0.1 only; the rest are doc links.
+grep -rnoE 'https?://[^ "]+' R/
+
+# Every network call site. Expect curl:: in bridge.R and client-vscode.R only.
+grep -rn 'curl::' R/
+
+# Credential env-var handling. Expect hits in governance.R ONLY -- that is the
+# scanner watch-list described in section 6. Any hit elsewhere would warrant
+# scrutiny.
+grep -rnE 'ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_PAT' R/
+
+# Confirm those names are only ever read for comparison, never sent. Expect
+# two Sys.getenv() calls inside the scanner -- one to detect, one to redact --
+grep -rn 'Sys.getenv' R/governance.R
+
+# Every file-write call site.
+grep -rnE 'writeLines|saveRDS|file.create|dir.create' R/
+```
+
+The package contains no compiled code, so reviewing the R source is a complete
+review of what hal itself can do.

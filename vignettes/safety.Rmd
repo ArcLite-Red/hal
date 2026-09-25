@@ -1,0 +1,78 @@
+---
+title: "Safety & permissions"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Safety & permissions}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+hal is an **agent, not a chatbot**: it can run R in your live session and, on
+the Copilot/Claude backends, use the CLI's built-in file and shell tools. That
+power is the point — and it means hal acts with **your** privileges. Treat it
+like a capable pair-programmer you supervise, not a sandbox.
+
+## The one thing to know
+
+When the model calls a tool, code runs for real:
+
+- **`eval_r`** executes R in your session — it can read your data, your files,
+  and your environment, and assign back into it.
+- On **Copilot/Claude**, the agent can also edit files and run shell commands.
+
+There's a governance layer (a denylist on `eval_r`, a credential scanner on
+outbound text), but think of it as **guardrails against accidents, not a
+security boundary against a determined model or a prompt-injection payload.**
+Don't point hal at untrusted prompts, files, or data and walk away.
+
+## The dials
+
+Three options control how much hal can do without asking:
+
+```r
+hal_configure(
+  permission_policy = "ask",      # prompt before each tool call ("auto-allow" is the default)
+  credential_action = "redact",   # scrub detected secrets from outbound text ("warn" is the default)
+  eval_denylist     = c("system", "unlink", "download.file")  # block these in eval_r
+)
+```
+
+- **`permission_policy`** — `"auto-allow"` (default), `"auto-deny"`, `"ask"`
+  (interactive confirm), or a function you supply.
+- **`credential_action`** — `"warn"` (default), `"redact"`, or `"block"` when a
+  secret pattern is detected in text headed to the model.
+- **`eval_denylist`** — function names blocked from `eval_r` (set `FALSE` to
+  disable, or pass your own vector).
+
+## A cautious profile
+
+```r
+hal_configure(
+  permission_policy = "ask",
+  credential_action = "redact"
+)
+```
+
+This prompts you before tools run and strips recognised secrets on the way out.
+Tighten further per project as needed.
+
+## Going deeper
+
+Three deeper documents ship with the source repository under `dev/` — see the
+project on [GitHub](https://github.com/ArcLite-Red/hal):
+
+- `dev/security_model.Rmd` — the full threat model: exactly what is and isn't a
+  security boundary, the known `eval_r` bypass classes, and the localhost
+  bridge's auth design.
+- `dev/hardening.Rmd` — a host hardening checklist and configuration recipes.
+- `dev/data_governance.Rmd` — what data leaves the machine, where it goes, what
+  hal stores, and how to restrict each of those. **This is the one to hand to a
+  security or privacy reviewer** evaluating hal for use inside an organisation.

@@ -1,0 +1,141 @@
+# Canary — watches the external CLIs hal depends on.
+#
+# The test suite runs against mock CLIs (inst/mock-cli/), which is correct for
+# CRAN but means it cannot notice when the *real* CLIs change: tests stay green
+# while users break. This job exists to fail when an assumption about those
+# CLIs stops being true.
+#
+# Deliberately secret-free. It checks that each CLI still installs and that
+# hal's own discovery logic still finds it -- both of which break without
+# warning (a yanked npm package, a renamed binary, a changed shim layout).
+# It does NOT check model ids, which would require credentials; catch those
+# with a local `hal_models()` run before a release.
+#
+# Note: GitHub disables scheduled workflows on public repos after 60 days of
+# repository inactivity. If this has not run in a while, check that it is
+# still enabled rather than assuming silence means health.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+name: canary
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-cli:
+    name: copilot CLI reachable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Report a version
+        run: |
+          set -euo pipefail
+          copilot --version | tee version.txt
+          grep -q '[0-9]' version.txt
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::devtools
+          needs: check
+
+      - name: hal can still discover it
+        run: |
+          devtools::load_all(".")
+          info <- hal:::find_hal_cli()
+          cat("command:", info$command, "\n")
+          cat("prefix_args:", paste(info$prefix_args, collapse = " "), "\n")
+          ver <- hal:::.hal_cli_version()
+          if (is.null(ver)) stop("find_hal_cli() succeeded but no version reported")
+          cat("version:", ver, "\n")
+        shell: Rscript {0}
+
+  claude-cli:
+    name: claude CLI reachable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Report a version
+        run: |
+          set -euo pipefail
+          claude --version | tee version.txt
+          grep -q '[0-9]' version.txt
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::devtools
+          needs: check
+
+      - name: hal can still discover it
+        run: |
+          devtools::load_all(".")
+          info <- hal:::find_claude_cli()
+          cat("command:", info$command, "\n")
+          ver <- hal:::.hal_claude_cli_version()
+          if (is.null(ver)) stop("find_claude_cli() succeeded but no version reported")
+          cat("version:", ver, "\n")
+        shell: Rscript {0}
+
+  report:
+    name: open an issue on failure
+    runs-on: ubuntu-latest
+    needs: [copilot-cli, claude-cli]
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: File or update the canary issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout in this job, so gh has no local git context to infer
+          # the repo from -- it reads GH_REPO instead.
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # Idempotent: the label may not exist yet on a fresh repo.
+          gh label create canary \
+            --color B60205 \
+            --description "External dependency drift" 2>/dev/null || true
+
+          existing=$(gh issue list --label canary --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+
+          body=$(printf '%s\n' \
+            "The weekly canary failed. One of the CLIs hal drives is no longer" \
+            "installable, no longer reports a version, or is no longer found by" \
+            "hal's discovery code." \
+            "" \
+            "The mocked test suite will not catch this -- it is why this job exists." \
+            "" \
+            "Run: $RUN_URL")
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create \
+              --title "Canary: external CLI drift detected" \
+              --label canary \
+              --body "$body"
+          fi

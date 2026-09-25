@@ -1,0 +1,112 @@
+url: https://arclite-red.github.io/hal/
+
+template:
+  bootstrap: 5
+  bootswatch: flatly
+  includes:
+    in_header: |
+      <style>
+        .page-header small,
+        .page-header .pkgdown-nav,
+        .template-article .page-header a { display: none; }
+      </style>
+
+navbar:
+  structure:
+    left: [intro, guides, reference, news]
+    right: [search, github]
+  components:
+    guides:
+      text: Guides
+      menu:
+        - text: Getting started
+          href: articles/getting-started.html
+        - text: Safety & permissions
+          href: articles/safety.html
+        - text: Backends
+          href: articles/backends.html
+        - text: Agent tools
+          href: articles/agent-tools.html
+    github:
+      icon: fa-github
+      href: https://github.com/ArcLite-Red/hal
+      aria-label: GitHub repository
+
+articles:
+  - title: "Guides"
+    contents:
+      - getting-started
+      - safety
+      - backends
+      - agent-tools
+
+home:
+  title: "hal -- GitHub Copilot SDK for R"
+  description: >
+    A coding agent for R. Not a chatbot -- an agent that reads your code,
+    searches your codebase, edits files, and runs commands. 17 models,
+    zero API keys, powered by GitHub Copilot.
+
+reference:
+  - title: "Conversation"
+    desc: "Stateful conversation and pipe-friendly verbs."
+    contents:
+      - hal
+      - hal_ask
+      - hal_do
+      - hal_history
+      - hal_plan
+      - hal_reset
+      - hal_usage
+      - hal_quota
+
+  - title: "Spreadsheets"
+    desc: "Translate Excel formula columns into verified tidyverse R."
+    contents:
+      - hal_excel
+
+  - title: "Configuration"
+    desc: "Session settings and governance controls."
+    contents:
+      - hal_configure
+      - hal_config
+
+  - title: "Custom Tools"
+    desc: "Build and register LLM-callable tools from R functions."
+    contents:
+      - hal_tool
+      - hal_tools
+      - hal_register_tool
+      - hal_register_tools
+      - hal_register_tool_specs
+      - hal_register_package_tools
+
+  - title: "Chat Interface"
+    desc: "High-level R6 API for conversing with Copilot models."
+    contents:
+      - hal_chat
+      - HalChat
+
+  - title: "Low-Level Client"
+    desc: "Direct ACP transport for advanced use cases."
+    contents:
+      - hal_client
+      - HalClient
+
+  - title: "Setup & Discovery"
+    desc: "Install, configure, and check prerequisites."
+    contents:
+      - hal_setup
+      - hal_status
+      - hal_available
+      - hal_models
+      - hal_model_info
+      - hal_install_bridge
+      - hal_bridge_status
+
+  - title: "Data Objects"
+    desc: "S3 classes for responses, turns, and tool calls."
+    contents:
+      - hal_response
+      - hal_turn
+      - hal_tool_call

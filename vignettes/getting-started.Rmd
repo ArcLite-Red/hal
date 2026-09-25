@@ -1,0 +1,136 @@
+---
+title: "Getting started"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+hal gives you a coding agent inside R — not a chatbot, but an agent that
+reads code, searches your codebase, edits files, and runs commands.
+
+| Function | What it does |
+|---|---|
+| `hal()` | Multi-turn conversation, full agent tool access |
+| `hal_ask()` | Pipe data, get analysis (one-shot) |
+| `hal_do()` | Generate and run R code (one-shot) |
+
+## Install
+
+```r
+# install.packages("pak")
+pak::pak("ArcLite-Red/hal")
+
+library(hal)
+hal_setup()   # auto-picks the backend: bundled bridge in Positron,
+              # Copilot CLI elsewhere (walks through login)
+hal_status()  # traffic-light report; tells you the next step if
+              # anything is missing
+```
+
+In Positron, `hal_setup()` installs the hal-bridge extension from the
+VSIX bundled inside hal — no download, no GitHub CLI. The only external
+requirement is being signed in to GitHub Copilot in Positron itself
+(account menu, lower left). Whenever something doesn't work, start with
+`hal_status()`.
+
+## Converse
+
+`hal()` keeps a stateful session across calls.
+
+```r
+hal("What are the top 3 dplyr verbs and when would I use each?")
+hal("Show me an example of mutate.")
+```
+
+```{r, echo = FALSE, eval = TRUE, results = "asis"}
+cat('<img src="../man/figures/demo-conversation.gif" alt="hal conversation demo" width="100%" />\n')
+```
+
+## Analyze data
+
+Pipe any object into `hal_ask()`. Data flows through unchanged so you
+can keep piping.
+
+```r
+mtcars |>
+  hal_ask("3 patterns in fuel efficiency")
+```
+
+```{r, echo = FALSE, eval = TRUE, results = "asis"}
+cat('<img src="../man/figures/demo-pipe-ask.gif" alt="hal_ask pipe demo" width="100%" />\n')
+```
+
+## Generate code
+
+`hal_do()` returns and runs R code. In RStudio / Positron scripts, the
+generated code replaces the `hal_do()` call inline.
+
+```r
+mtcars |>
+  hal_do("group by cyl, summarize mean mpg")
+```
+
+```{r, echo = FALSE, eval = TRUE, results = "asis"}
+cat('<img src="../man/figures/demo-pipe-do.gif" alt="hal_do pipe demo" width="100%" />\n')
+```
+
+After a successful transform, `hal_do()` **verifies** the result against
+the input and prints a one-line structural report — row deltas, columns
+added/removed, class changes, introduced NAs:
+
+```r
+mtcars |> hal_do("filter to mpg > 20 and add kpl = mpg * 0.425")
+#> i hal_do: 32 -> 14 rows | +1 col (kpl)
+```
+
+The full report is attached as `attr(result, "hal_verify")`. Output
+that is identical to the input, or has 0 rows, raises a warning
+(classed `hal_do_warning`). Verification is report-only — it never
+changes your data or triggers retries. Disable with `.verify = FALSE`
+or `hal_configure(verify = FALSE)`.
+
+If generation fails after retries (2 by default), `hal_do()` warns and
+passes your data through unchanged at the console, but **aborts in
+scripts and R Markdown** — a pipeline silently continuing with
+untransformed data is worse than an error. Override with
+`hal_configure(do_on_fail = "warn")` or `"abort"`.
+
+## Replace a spreadsheet
+
+`hal_excel()` reads an `.xlsx` and translates each formula column into a
+tidyverse expression, verifying every translation row-for-row against
+the values Excel itself cached. The result is a runnable script that
+replaces the workbook; unverified columns come back as commented stubs
+to review.
+
+```r
+code <- hal_excel("sales_model.xlsx")
+attr(code, "hal_excel")            # per-column verification report
+writeLines(code, "sales_model.R")
+```
+
+## Configure
+
+```r
+hal_configure(default_model = "claude-haiku-4.5")
+hal_configure(stream_speed = "fast")
+hal_models()        # list available models
+hal_config()        # current settings
+```
+
+## Next
+
+- `vignette("agent-tools")` — how the agent uses tools, and how to add
+  your own.
+- `?hal_configure` — full settings reference.
+- `?HalChat` — R6 API for concurrent sessions.

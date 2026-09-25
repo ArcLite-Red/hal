@@ -1,0 +1,42 @@
+Package: hal
+Title: Agentic Coding Assistants
+Version: 0.1.4
+Authors@R:
+    person("Mark", "Dippold", , email = "arclitered@gmail.com", role = c("aut", "cre"))
+Description: A native R interface to agentic coding assistants. Talks
+    directly to local command line interfaces ('GitHub Copilot',
+    'Anthropic' 'Claude Code') over standard input/output and to a local
+    'vscode.lm' bridge inside 'Positron', providing multi-model chat,
+    tool calling, and in-session R evaluation. Supports a single stateful
+    hal() session as well as disposable hal_ask() / hal_do() pipeline
+    verbs, plot capture so models can see graphics, verified data
+    transforms, and user-defined tools.
+License: MIT + file LICENSE
+URL: https://arclite-red.github.io/hal/, https://github.com/ArcLite-Red/hal
+BugReports: https://github.com/ArcLite-Red/hal/issues
+Depends:
+    R (>= 4.1)
+Imports:
+    cli,
+    curl,
+    jsonlite,
+    processx,
+    R6,
+    rlang (>= 1.1.0)
+Suggests:
+    covr,
+    dplyr,
+    ellmer,
+    ggplot2,
+    knitr,
+    openxlsx2,
+    rmarkdown,
+    rstudioapi,
+    styler,
+    testthat (>= 3.0.0),
+    withr
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0

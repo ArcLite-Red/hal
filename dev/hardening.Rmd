@@ -1,0 +1,163 @@
+---
+title: "hal — Hardening guide"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Hardening guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+> **Internal / deep-dive doc.** Companion to `dev/security_model.Rmd`. Concrete
+> knobs and host steps to tighten a hal deployment. Lives in `dev/` (ships in
+> the repo, not on the public site). Read the trust model first — these knobs
+> are guardrails unless paired with OS/VM isolation.
+
+# 1. Pick a permission posture
+
+The biggest single lever. Default is open (`auto-allow`); tighten per session or
+globally.
+
+```r
+# Prompt before every tool call (interactive sessions)
+hal_configure(permission_policy = "ask")
+
+# Deny everything (read-only chat; eval_r/tool calls refused)
+hal_configure(permission_policy = "auto-deny")
+```
+
+A **function policy** gives fine-grained, programmable control. It receives
+`list(backend, tool_name, input)` and returns a string containing `"allow"` or
+`"deny"`:
+
+```r
+hal_configure(permission_policy = function(p) {
+  # Allow inspection, deny anything that writes/destroys via eval_r.
+  if (p$tool_name == "eval_r") {
+    code <- p$input$code %||% ""
+    if (grepl("unlink|file\\.remove|writeLines|system|download\\.file", code)) {
+      return("deny: looks destructive")
+    }
+  }
+  "allow"
+})
+```
+
+Takes effect on next session init — call `hal_reset()` to apply immediately.
+Note the function policy round-trips through MCP on the Claude backend only when
+you supply a function (it drives `--permission-prompt-tool`).
+
+# 2. Outbound secret handling
+
+The scanner runs on text headed to the model (prompts, env snapshots, `eval_r`
+output). Default is `warn` (detect + warn, still send). Tighten:
+
+```r
+hal_configure(credential_action = "redact")  # scrub detected secrets, then send
+hal_configure(credential_action = "block")   # abort the call entirely
+```
+
+Detected shapes (see `R/governance.R`): GitHub tokens (`ghp_`/`gho_`/`ghs_`/
+`ghr_`/fine-grained), OpenAI (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`),
+Anthropic (`sk-ant-`), AWS access/secret keys, Google API keys (`AIza…`), Slack
+tokens + webhooks, PEM private-key blocks, and quoted `key = "…"` assignments.
+It also redacts the live values of known sensitive env vars
+(`ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY`, …).
+
+**This is best-effort.** A novel token shape or an arbitrary secret file will
+pass through. Don't treat `redact` as a guarantee — pair it with not exposing
+the secret to the session in the first place.
+
+# 3. Constrain `eval_r`
+
+The denylist is a guardrail (bypassable — see the trust model), but it still
+catches the obvious first attempt. Customize or extend it:
+
+```r
+# Add to the default set
+hal_configure(eval_denylist = c(hal:::.HAL_DEFAULT_EVAL_DENYLIST,
+                                "readRDS", "load", "readLines"))
+
+# Disable entirely (full access — only if you trust the whole loop)
+hal_configure(eval_denylist = FALSE)
+```
+
+Bound runaway code:
+
+```r
+hal_configure(eval_timeout = 15)   # seconds per eval_r call
+```
+
+`eval_timeout` uses `setTimeLimit`, which interrupts at interpreter checkpoints —
+a blocking C call or external I/O may not be cut off. For a hard wall, run hal
+under an OS-level resource limit.
+
+# 4. Multi-user / shared hosts
+
+- The IPC directory (parent ↔ MCP subprocess) is created **`0700`**
+  (`R/tool-eval-r.R`) inside R's per-session `tempdir()` (itself `0700` on
+  POSIX). This keeps another local user from dropping a `request-*.json`
+  (code injection into your session) or reading eval results. If you override
+  `TMPDIR` to a shared, loosely-permissioned location, restore `0700` semantics
+  there.
+- On Windows, `%TEMP%` is per-user, so the IPC dir is already private; `mode`
+  is ignored.
+- The MCP subprocess runs with `--vanilla`, so it won't auto-source your
+  `.Renviron`/`.Rprofile`.
+
+# 5. The vscode bridge
+
+The bridge is loopback-only with a per-launch bearer token in a `0600` port
+file (see the trust model, §5). Operational hygiene:
+
+- The token rotates on every Positron reload; if you suspect exposure, **reload
+  Positron** to mint a fresh one and rewrite the port file.
+- `hal_bridge_status()` reports whether it's running and the version.
+- The port file lives in `%LOCALAPPDATA%\hal-bridge\port.json` /
+  `$XDG_RUNTIME_DIR/hal-bridge/port.json` — keep that dir owner-only (it is by
+  default).
+
+# 6. Running against untrusted inputs
+
+If you must point hal at code/data you don't control (analyzing a third-party
+repo, an emailed `.xlsx`, scraped text):
+
+1. Set `permission_policy = "ask"` (or a strict function policy).
+2. Set `credential_action = "redact"` or `"block"`.
+3. Strip your live credentials from the environment first
+   (`Sys.unsetenv("ANTHROPIC_API_KEY")` etc. once the session is auth'd, or run
+   in a profile that never had them).
+4. Better: run in a throwaway VM/container/dedicated OS user with no access to
+   anything sensitive. Guardrails won't contain a prompt-injection payload; OS
+   isolation will.
+
+# 7. GitHub / CI hardening (repo side)
+
+For the project repository itself:
+
+- **Enable Dependabot alerts** (free) — surfaces vulnerable transitive deps.
+- **Enable secret-scanning push protection** (free) — blocks accidental key
+  commits at `git push` time. (hal's history is currently clean.)
+- **Protect `main`** — require a PR + passing checks before merge; stops
+  unreviewed direct/force-pushes.
+- **Pin GitHub Actions to commit SHAs** (not floating `@v2`/`@v4` tags) and
+  consider restricting `allowed_actions` to selected/verified — the default
+  workflow token is already read-only, which is good.
+
+# 8. One-glance "locked down" profile
+
+```r
+hal_configure(
+  permission_policy = "ask",
+  credential_action = "redact",
+  eval_timeout      = 15
+)
+# plus: untrusted inputs -> throwaway VM/user with no live secrets.
+```
+
+Remember the framing from the trust model: these settings reduce blast radius
+and stop accidents. For containment against a hostile prompt, isolate at the OS
+level.
