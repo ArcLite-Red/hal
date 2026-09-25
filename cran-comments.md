@@ -10,13 +10,17 @@ This is a new submission (hal 0.1.4).
 - GitHub Actions: ubuntu-latest (R release), ubuntu-latest (R devel),
   ubuntu-latest (R oldrel-1), windows-latest (R release),
   macos-latest (R release)
-- win-builder: R devel (run before submission)
+- win-builder: R devel (2026-09-21 r90579 ucrt)
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes
+0 errors | 0 warnings | 1 note
 
-(Only the expected "New submission" NOTE on CRAN incoming checks.)
+- This is a new submission.
+- Possibly misspelled words in DESCRIPTION: "agentic" and "stateful" are
+  correct technical terms ("agentic" = AI tools that take actions such as
+  running code, not just generate text; "stateful" = keeps conversation
+  state between calls).
 
 ## Notes for reviewers
 
