@@ -5,6 +5,8 @@
 
 <!-- badges: start -->
 
+[![CRAN
+status](https://www.r-pkg.org/badges/version/hal)](https://CRAN.R-project.org/package=hal)
 [![R-CMD-check](https://github.com/ArcLite-Red/hal/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ArcLite-Red/hal/actions/workflows/R-CMD-check.yaml)
 <!-- badges: end -->
 
@@ -55,12 +57,20 @@ Bullet features:
 
 ## Install
 
+Install the released version from CRAN:
+
 ``` r
-# install.packages("pak")
-pak::pak("ArcLite-Red/hal")
+install.packages("hal")
 library(hal)
 
 hal_setup()    # auto-picks the right backend for your host
+```
+
+Or the development version from GitHub:
+
+``` r
+# install.packages("pak")
+pak::pak("ArcLite-Red/hal")
 ```
 
 `hal_setup()` walks you through the appropriate path. In Positron it
