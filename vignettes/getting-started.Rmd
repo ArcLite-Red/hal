@@ -27,8 +27,11 @@ reads code, searches your codebase, edits files, and runs commands.
 ## Install
 
 ```r
+install.packages("hal")
+
+# or the development version from GitHub:
 # install.packages("pak")
-pak::pak("ArcLite-Red/hal")
+# pak::pak("ArcLite-Red/hal")
 
 library(hal)
 hal_setup()   # auto-picks the backend: bundled bridge in Positron,

@@ -40,3 +40,5 @@ Config/testthat/edition: 3
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.0.0
+X-schema.org-keywords: llm, ai, agent, coding-assistant, copilot, github-copilot,
+    claude, claude-code, positron, mcp, tool-calling

@@ -18,3 +18,5 @@
 ^\.vscode$
 ^\.gitattributes$
 ^CRAN-SUBMISSION$
+^man/figures/card\.png$
+^vignettes/articles$

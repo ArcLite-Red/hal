@@ -3,6 +3,10 @@ url: https://arclite-red.github.io/hal/
 template:
   bootstrap: 5
   bootswatch: flatly
+  opengraph:
+    image:
+      src: man/figures/card.png
+      alt: "hal: a coding agent for R, with Copilot, Claude Code and Positron backends"
   includes:
     in_header: |
       <style>
@@ -13,7 +17,7 @@ template:
 
 navbar:
   structure:
-    left: [intro, guides, reference, news]
+    left: [intro, guides, reference, blog, news]
     right: [search, github]
   components:
     guides:
@@ -27,6 +31,9 @@ navbar:
           href: articles/backends.html
         - text: Agent tools
           href: articles/agent-tools.html
+    blog:
+      text: Blog
+      href: articles/introducing-hal.html
     github:
       icon: fa-github
       href: https://github.com/ArcLite-Red/hal
@@ -39,13 +46,17 @@ articles:
       - safety
       - backends
       - agent-tools
+  - title: "Blog"
+    contents:
+      - articles/introducing-hal
 
 home:
-  title: "hal -- GitHub Copilot SDK for R"
+  title: "hal: A Coding Agent for R (Copilot, Claude Code, Positron)"
   description: >
-    A coding agent for R. Not a chatbot -- an agent that reads your code,
-    searches your codebase, edits files, and runs commands. 17 models,
-    zero API keys, powered by GitHub Copilot.
+    hal is an R package that brings agentic coding assistants into your R
+    session. Talk to GitHub Copilot, Claude Code, or Positron's built-in
+    language models from R -- with tool calling, in-session R evaluation,
+    and pipe-friendly hal_ask() / hal_do() verbs. Zero API keys.
 
 reference:
   - title: "Conversation"
