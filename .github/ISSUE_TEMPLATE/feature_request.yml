@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an idea or improvement for hal.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        hal is maintained in spare time, so not every request will be
+        built. Requests that describe a concrete workflow are the most
+        likely to happen.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The workflow or problem, not just the feature. What are you doing today instead?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like hal to do?
+      description: An example of the R code you'd like to be able to write is ideal.
+      render: r
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Which backend(s) does this involve?
+      multiple: true
+      options:
+        - vscode (Positron / hal-bridge)
+        - copilot (GitHub Copilot CLI)
+        - claude (Claude Code CLI)
+        - All / not backend-specific

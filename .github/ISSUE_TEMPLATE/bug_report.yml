@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in hal doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Most setup problems show up in `hal_status()`,
+        so please run that first and paste its output below.
+
+        **Security issues:** please don't file them here. Use a
+        [private security advisory](https://github.com/ArcLite-Red/hal/security/advisories/new) instead.
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - vscode (Positron / hal-bridge)
+        - copilot (GitHub Copilot CLI)
+        - claude (Claude Code CLI)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead. Include the full error message.
+    validations:
+      required: true
+  - type: textarea
+    id: reprex
+    attributes:
+      label: Code to reproduce
+      description: The smallest R code that shows the problem.
+      render: r
+    validations:
+      required: true
+  - type: textarea
+    id: hal-status
+    attributes:
+      label: Output of `hal_status()`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: session-info
+    attributes:
+      label: Output of `sessionInfo()`
+      description: Shows your R version, operating system, and the version of hal you have installed.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: >
+        For example: corporate or managed Copilot seat, antivirus/EDR software,
+        proxy, or WSL. These often explain setup problems.
