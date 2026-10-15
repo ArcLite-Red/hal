@@ -89,11 +89,11 @@ output identical to the input or zero rows, raise a warning. In scripts
 that run non-interactively, failures abort instead of passing bad data
 downstream quietly.
 
-<img src="https://arclite-red.github.io/hal/reference/figures/demo-pipe-do.gif" alt="hal_do demo" width="100%" />
-
 In RStudio or Positron, `hal_do()` can also replace itself in your editor
 with the code it generated. You keep the code, and the agent isn't needed
 next time you run the script.
+
+<img src="https://arclite-red.github.io/hal/reference/figures/demo-pipe-do2.gif" alt="hal_do replacing itself in the editor with generated code" width="100%" />
 
 ## Two things I haven't seen elsewhere
 
