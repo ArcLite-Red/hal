@@ -30,7 +30,11 @@
 #'   In standalone mode: the first prompt string.
 #' @param ... Character strings forming the prompt.
 #'
-#' @return **Pipe mode:** invisibly returns `.data` (pipe passthrough).
+#' @return **Pipe mode:** invisibly returns `.data` (pipe passthrough), with
+#'   the model's answer attached as `attr(result, "hal_response")` (a
+#'   character string). The attribute is absent if the request failed, and is
+#'   never set on environments (including R6 objects, where it would modify
+#'   the original by reference) or `NULL`.
 #'   **Standalone:** invisibly returns the response text.
 #'
 #' @examples
@@ -165,7 +169,22 @@ hal_ask <- function(.data, ...) {
   # Display with formatting
   .hal_display_response(resp_text)
 
-  if (standalone) invisible(resp_text) else invisible(.data)
+  if (standalone) invisible(resp_text) else invisible(.hal_attach_response(.data, resp_text))
+}
+
+#' Attach a hal_ask() response to the piped object
+#'
+#' Skips environments (attributes on an environment modify the caller's
+#' object by reference) and NULL (cannot hold attributes). Any other object
+#' that refuses attributes is returned unchanged.
+#' @keywords internal
+#' @noRd
+.hal_attach_response <- function(x, text) {
+  if (is.null(x) || is.environment(x) || !is.character(text)) return(x)
+  tryCatch({
+    attr(x, "hal_response") <- text
+    x
+  }, error = function(e) x)
 }
 
 # ==============================================================================

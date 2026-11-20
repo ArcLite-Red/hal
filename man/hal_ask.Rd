@@ -13,7 +13,11 @@ In standalone mode: the first prompt string.}
 \item{...}{Character strings forming the prompt.}
 }
 \value{
-\strong{Pipe mode:} invisibly returns \code{.data} (pipe passthrough).
+\strong{Pipe mode:} invisibly returns \code{.data} (pipe passthrough), with
+the model's answer attached as \code{attr(result, "hal_response")} (a
+character string). The attribute is absent if the request failed, and is
+never set on environments (including R6 objects, where it would modify
+the original by reference) or \code{NULL}.
 \strong{Standalone:} invisibly returns the response text.
 }
 \description{

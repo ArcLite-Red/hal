@@ -415,7 +415,7 @@ test_that("hal_ask includes long character data verbatim, not str()-truncated", 
   expect_gt(nchar(long_text), 128)
 
   out <- hal_ask(long_text, "summarize this")
-  expect_identical(out, long_text)
+  expect_equal(out, long_text, ignore_attr = "hal_response")
   expect_true(grepl(long_text, sent, fixed = TRUE))
   expect_false(grepl("__truncated__", sent, fixed = TRUE))
 })
@@ -505,4 +505,57 @@ test_that("hal_ask scans the full prompt for credentials (block / redact)", {
     expect_error(hal_ask("summarize:", text), "Transmission blocked")
   })
   expect_null(sent)
+})
+
+# -- hal_ask: response attribute in pipe mode ------------------------------------
+
+local_fake_hal_ask <- function(response = "the answer", fail = FALSE,
+                               env = parent.frame()) {
+  fake_client <- list(
+    swap_session = function() "sid",
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) if (fail) stop("boom") else response
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL),
+    .env = env
+  )
+}
+
+test_that("pipe-mode hal_ask attaches the response as an attribute", {
+  local_fake_hal_ask("Mazdas have high mpg.")
+  x <- mtcars |> hal_ask("tell me about the mazdas")
+  expect_identical(attr(x, "hal_response"), "Mazdas have high mpg.")
+  # Data is otherwise unchanged
+  attr(x, "hal_response") <- NULL
+  expect_identical(x, mtcars)
+})
+
+test_that("hal_ask extracts text from hal_response objects", {
+  local_fake_hal_ask(list(text = "from object"))
+  x <- mtcars |> hal_ask("q")
+  expect_identical(attr(x, "hal_response"), "from object")
+})
+
+test_that("hal_ask sets no attribute when the request fails", {
+  local_fake_hal_ask(fail = TRUE)
+  expect_warning(x <- mtcars |> hal_ask("q"), class = "hal_ask_warning")
+  expect_null(attr(x, "hal_response"))
+  expect_identical(x, mtcars)
+})
+
+test_that("hal_ask never mutates environments via the attribute", {
+  local_fake_hal_ask("answer")
+  e <- new.env()
+  out <- e |> hal_ask("q")
+  expect_identical(out, e)
+  expect_null(attr(e, "hal_response"))
+})
+
+test_that("standalone hal_ask still returns plain response text", {
+  local_fake_hal_ask("plain")
+  expect_identical(hal_ask("a question"), "plain")
 })

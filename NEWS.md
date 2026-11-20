@@ -1,5 +1,11 @@
 # hal (development version)
 
+* In pipe mode, `hal_ask()` now attaches the model's answer to the returned
+  object as `attr(x, "hal_response")`, so
+  `x <- mtcars |> hal_ask("...")` keeps the answer as well as the data.
+  The attribute is absent if the request failed, and is not set on
+  environments or R6 objects.
+
 * `hal_ask()` now includes character data in full. Previously a string
   passed via a variable (e.g. `hal_ask(my_text, "summarize")`) went through
   `str()`, which cut it off at 128 characters, so the model only saw the
