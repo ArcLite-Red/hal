@@ -394,3 +394,46 @@ test_that("contested data-science nouns still match (FN worse than FP)", {
     c("data", "model")
   )
 })
+
+# -- hal_ask: character data is passed in full -----------------------------------
+
+test_that("hal_ask includes long character data verbatim, not str()-truncated", {
+  sent <- NULL
+  fake_client <- list(
+    swap_session = function() "sid",
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) { sent <<- p; "ok" }
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL)
+  )
+
+  long_text <- paste(rep("lorem ipsum dolor", 100), collapse = " ")
+  expect_gt(nchar(long_text), 128)
+
+  out <- hal_ask(long_text, "summarize this")
+  expect_identical(out, long_text)
+  expect_true(grepl(long_text, sent, fixed = TRUE))
+  expect_false(grepl("__truncated__", sent, fixed = TRUE))
+})
+
+test_that("hal_ask still uses str() for non-character data", {
+  sent <- NULL
+  fake_client <- list(
+    swap_session = function() "sid",
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) { sent <<- p; "ok" }
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL)
+  )
+
+  hal_ask(mtcars, "describe")
+  expect_true(grepl("'data.frame':\t32 obs. of  11 variables", sent, fixed = TRUE))
+})

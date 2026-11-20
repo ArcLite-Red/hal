@@ -1,3 +1,10 @@
+# hal (development version)
+
+* `hal_ask()` now includes character data in full. Previously a string
+  passed via a variable (e.g. `hal_ask(my_text, "summarize")`) went through
+  `str()`, which cut it off at 128 characters, so the model only saw the
+  beginning of the text.
+
 # hal 0.1.4
 
 * **Plot vision: the model can now see your plots.** When `eval_r` code

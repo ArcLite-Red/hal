@@ -18,7 +18,8 @@
 #'
 #' **Pipe mode**: a pipe-terminal verb that sends a prompt to Copilot augmented
 #' with the piped data context. The piped object is described via `str()` and
-#' attached to the prompt. Returns `.data` invisibly (pipe passthrough).
+#' attached to the prompt; character vectors are attached verbatim (in full)
+#' instead. Returns `.data` invisibly (pipe passthrough).
 #'
 #' **Standalone mode**: called directly with a string prompt to ask a question
 #' without data context. Returns the response text invisibly.
@@ -73,12 +74,18 @@ hal_ask <- function(.data, ...) {
       NULL
     }
 
-    # Build data description
-    data_desc <- tryCatch(
-      paste(utils::capture.output(utils::str(.data, max.level = 2L)),
-            collapse = "\n"),
-      error = function(e) "<unable to describe data>"
-    )
+    # Build data description. Character data is included verbatim: str()
+    # truncates strings at 128 chars, which silently drops most of a long
+    # text passed via a variable (e.g. hal_ask(my_text, "summarize")).
+    data_desc <- if (is.character(.data)) {
+      paste(.data, collapse = "\n")
+    } else {
+      tryCatch(
+        paste(utils::capture.output(utils::str(.data, max.level = 2L)),
+              collapse = "\n"),
+        error = function(e) "<unable to describe data>"
+      )
+    }
 
     sections <- c(
       paste(
