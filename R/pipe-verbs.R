@@ -30,7 +30,11 @@
 #'   In standalone mode: the first prompt string.
 #' @param ... Character strings forming the prompt.
 #'
-#' @return **Pipe mode:** invisibly returns `.data` (pipe passthrough).
+#' @return **Pipe mode:** invisibly returns `.data` (pipe passthrough), with
+#'   the model's answer attached as `attr(result, "hal_response")` (a
+#'   character string). The attribute is absent if the request failed, and is
+#'   never set on environments (including R6 objects, where it would modify
+#'   the original by reference) or `NULL`.
 #'   **Standalone:** invisibly returns the response text.
 #'
 #' @examples
@@ -66,6 +70,11 @@ hal_ask <- function(.data, ...) {
       cli::cli_abort("All prompt arguments must be character strings.")
     }
     user_question <- paste(unlist(dots), collapse = " ")
+
+    # Drop any answer from an earlier hal_ask(): it must not leak into this
+    # prompt's data context (str()/print() show attributes), and a failed
+    # request must return the object without a stale hal_response.
+    .data <- .hal_attach_response(.data, NULL)
 
     # Capture piped code expression
     code_text <- if (!is.null(raw_data_expr)) {
@@ -165,7 +174,24 @@ hal_ask <- function(.data, ...) {
   # Display with formatting
   .hal_display_response(resp_text)
 
-  if (standalone) invisible(resp_text) else invisible(.data)
+  if (standalone) invisible(resp_text) else invisible(.hal_attach_response(.data, resp_text))
+}
+
+#' Attach (or, with `text = NULL`, remove) a hal_ask() response on an object
+#'
+#' Skips environments (attributes on an environment modify the caller's
+#' object by reference) and NULL (cannot hold attributes). Any other object
+#' that refuses attributes is returned unchanged.
+#' @keywords internal
+#' @noRd
+.hal_attach_response <- function(x, text) {
+  if (is.null(x) || is.environment(x)) return(x)
+  if (!is.null(text) && !is.character(text)) return(x)
+  if (is.null(text) && is.null(attr(x, "hal_response", exact = TRUE))) return(x)
+  tryCatch({
+    attr(x, "hal_response") <- text
+    x
+  }, error = function(e) x)
 }
 
 # ==============================================================================
