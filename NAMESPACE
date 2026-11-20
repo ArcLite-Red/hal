@@ -38,10 +38,16 @@ export(hal_tool)
 export(hal_tools)
 export(hal_usage)
 importFrom(R6,R6Class)
-importFrom(jsonlite,fromJSON)
-importFrom(jsonlite,toJSON)
+importFrom(jsonlite,
+  fromJSON,
+  toJSON
+)
 importFrom(rlang,"%||%")
-importFrom(stats,runif)
-importFrom(stats,setNames)
-importFrom(utils,flush.console)
-importFrom(utils,head)
+importFrom(stats,
+  runif,
+  setNames
+)
+importFrom(utils,
+  flush.console,
+  head
+)

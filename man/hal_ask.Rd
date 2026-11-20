@@ -19,7 +19,8 @@ In standalone mode: the first prompt string.}
 \description{
 \strong{Pipe mode}: a pipe-terminal verb that sends a prompt to Copilot augmented
 with the piped data context. The piped object is described via \code{str()} and
-attached to the prompt. Returns \code{.data} invisibly (pipe passthrough).
+attached to the prompt; character vectors are attached verbatim (in full)
+instead. Returns \code{.data} invisibly (pipe passthrough).
 }
 \details{
 \strong{Standalone mode}: called directly with a string prompt to ask a question

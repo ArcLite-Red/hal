@@ -18,7 +18,8 @@
 #'
 #' **Pipe mode**: a pipe-terminal verb that sends a prompt to Copilot augmented
 #' with the piped data context. The piped object is described via `str()` and
-#' attached to the prompt. Returns `.data` invisibly (pipe passthrough).
+#' attached to the prompt; character vectors are attached verbatim (in full)
+#' instead. Returns `.data` invisibly (pipe passthrough).
 #'
 #' **Standalone mode**: called directly with a string prompt to ask a question
 #' without data context. Returns the response text invisibly.
@@ -73,12 +74,25 @@ hal_ask <- function(.data, ...) {
       NULL
     }
 
-    # Build data description
-    data_desc <- tryCatch(
-      paste(utils::capture.output(utils::str(.data, max.level = 2L)),
-            collapse = "\n"),
-      error = function(e) "<unable to describe data>"
-    )
+    # Build data description. Character data is included in full: str()
+    # truncates strings at 128 chars, which silently drops most of a long
+    # text passed via a variable (e.g. hal_ask(my_text, "summarize")).
+    # Plain vectors are joined verbatim; named vectors and matrices use
+    # their printed form so labels and shape survive (print() does not
+    # truncate strings).
+    data_desc <- if (is.character(.data)) {
+      if (is.null(names(.data)) && is.null(dim(.data))) {
+        paste(.data, collapse = "\n")
+      } else {
+        paste(utils::capture.output(print(.data)), collapse = "\n")
+      }
+    } else {
+      tryCatch(
+        paste(utils::capture.output(utils::str(.data, max.level = 2L)),
+              collapse = "\n"),
+        error = function(e) "<unable to describe data>"
+      )
+    }
 
     sections <- c(
       paste(
@@ -95,6 +109,10 @@ hal_ask <- function(.data, ...) {
     sections <- c(sections, paste0("\n\n## Data Context\n", data_desc))
     augmented_prompt <- paste(sections, collapse = "")
   }
+
+  # Governance: credential scan before anything is sent (block aborts here,
+  # before a disposable session is created; redact returns cleaned text)
+  augmented_prompt <- .hal_scan_outbound(augmented_prompt)
 
   # Use existing client with a temporary session (fast, no new process)
   session <- .hal_ensure_session()
