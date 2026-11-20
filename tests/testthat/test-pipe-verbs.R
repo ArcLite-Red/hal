@@ -559,3 +559,40 @@ test_that("standalone hal_ask still returns plain response text", {
   local_fake_hal_ask("plain")
   expect_identical(hal_ask("a question"), "plain")
 })
+
+test_that("a failed hal_ask drops a stale hal_response from an earlier call", {
+  local_fake_hal_ask("first answer")
+  x <- mtcars |> hal_ask("a")
+  expect_identical(attr(x, "hal_response"), "first answer")
+
+  local_fake_hal_ask(fail = TRUE)
+  expect_warning(y <- x |> hal_ask("b"), class = "hal_ask_warning")
+  expect_null(attr(y, "hal_response"))
+  expect_identical(y, mtcars)
+})
+
+test_that("an earlier hal_response does not leak into the next prompt", {
+  sent <- NULL
+  fake_client <- list(
+    swap_session = function() "sid",
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) { sent <<- p; "second answer" }
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL)
+  )
+
+  x <- mtcars
+  attr(x, "hal_response") <- "SECRET-OLD-ANSWER"
+  y <- x |> hal_ask("b")
+  expect_false(grepl("SECRET-OLD-ANSWER", sent, fixed = TRUE))
+  expect_identical(attr(y, "hal_response"), "second answer")
+
+  v <- c(a = "1", b = "2")
+  attr(v, "hal_response") <- "SECRET-OLD-ANSWER"
+  v |> hal_ask("c")
+  expect_false(grepl("SECRET-OLD-ANSWER", sent, fixed = TRUE))
+})

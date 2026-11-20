@@ -71,6 +71,11 @@ hal_ask <- function(.data, ...) {
     }
     user_question <- paste(unlist(dots), collapse = " ")
 
+    # Drop any answer from an earlier hal_ask(): it must not leak into this
+    # prompt's data context (str()/print() show attributes), and a failed
+    # request must return the object without a stale hal_response.
+    .data <- .hal_attach_response(.data, NULL)
+
     # Capture piped code expression
     code_text <- if (!is.null(raw_data_expr)) {
       deparse(raw_data_expr, width.cutoff = 500L)
@@ -172,7 +177,7 @@ hal_ask <- function(.data, ...) {
   if (standalone) invisible(resp_text) else invisible(.hal_attach_response(.data, resp_text))
 }
 
-#' Attach a hal_ask() response to the piped object
+#' Attach (or, with `text = NULL`, remove) a hal_ask() response on an object
 #'
 #' Skips environments (attributes on an environment modify the caller's
 #' object by reference) and NULL (cannot hold attributes). Any other object
@@ -180,7 +185,9 @@ hal_ask <- function(.data, ...) {
 #' @keywords internal
 #' @noRd
 .hal_attach_response <- function(x, text) {
-  if (is.null(x) || is.environment(x) || !is.character(text)) return(x)
+  if (is.null(x) || is.environment(x)) return(x)
+  if (!is.null(text) && !is.character(text)) return(x)
+  if (is.null(text) && is.null(attr(x, "hal_response", exact = TRUE))) return(x)
   tryCatch({
     attr(x, "hal_response") <- text
     x
