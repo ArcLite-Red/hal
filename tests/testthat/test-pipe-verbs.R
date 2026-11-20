@@ -437,3 +437,72 @@ test_that("hal_ask still uses str() for non-character data", {
   hal_ask(mtcars, "describe")
   expect_true(grepl("'data.frame':\t32 obs. of  11 variables", sent, fixed = TRUE))
 })
+
+test_that("hal_ask keeps names and dimensions of structured character data", {
+  sent <- NULL
+  fake_client <- list(
+    swap_session = function() "sid",
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) { sent <<- p; "ok" }
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL)
+  )
+
+  groups <- c(control = "low", treatment = "high")
+  hal_ask(groups, "compare")
+  expect_true(grepl("control", sent, fixed = TRUE))
+  expect_true(grepl("treatment", sent, fixed = TRUE))
+
+  long <- strrep("x", 300)
+  m <- matrix(c("a", "b", long, "d"), nrow = 2,
+              dimnames = list(c("r1", "r2"), c("c1", "c2")))
+  hal_ask(m, "describe")
+  expect_true(grepl("r1", sent, fixed = TRUE))
+  expect_true(grepl("c2", sent, fixed = TRUE))
+  expect_true(grepl(long, sent, fixed = TRUE))
+})
+
+# -- hal_ask: credential governance ----------------------------------------------
+
+test_that("hal_ask scans the full prompt for credentials (block / redact)", {
+  sent <- NULL
+  swapped <- FALSE
+  fake_client <- list(
+    swap_session = function() { swapped <<- TRUE; "sid" },
+    restore_session = function(sid) invisible(NULL),
+    get_session_id = function() "sid",
+    prompt = function(p) { sent <<- p; "ok" }
+  )
+  fake_session <- list(chat = list(get_client = function() fake_client))
+  local_mocked_bindings(
+    .hal_ensure_session = function(...) fake_session,
+    .hal_display_response = function(...) invisible(NULL)
+  )
+
+  token <- "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+  # Credential sits past the old 128-char str() boundary
+  text <- paste(strrep("filler ", 40), token)
+
+  withr::with_options(list(hal.credential_action = "block"), {
+    expect_error(hal_ask(text, "summarize"), "Transmission blocked")
+  })
+  expect_null(sent)
+  expect_false(swapped)
+
+  withr::with_options(list(hal.credential_action = "redact"), {
+    expect_warning(hal_ask(text, "summarize"), "redacted")
+  })
+  expect_false(grepl(token, sent, fixed = TRUE))
+  expect_true(grepl("[REDACTED]", sent, fixed = TRUE))
+
+  # Standalone mode is scanned too
+  sent <- NULL
+  withr::with_options(list(hal.credential_action = "block"), {
+    expect_error(hal_ask("summarize:", text), "Transmission blocked")
+  })
+  expect_null(sent)
+})

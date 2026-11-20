@@ -3,7 +3,12 @@
 * `hal_ask()` now includes character data in full. Previously a string
   passed via a variable (e.g. `hal_ask(my_text, "summarize")`) went through
   `str()`, which cut it off at 128 characters, so the model only saw the
-  beginning of the text.
+  beginning of the text. Named character vectors and character matrices
+  keep their names and dimensions.
+
+* `hal_ask()` now runs the outbound credential scanner like `hal()` and
+  `hal_do()` do, so `credential_action = "block"` / `"redact"` apply to it.
+  Previously `hal_ask()` prompts were sent without scanning.
 
 # hal 0.1.4
 

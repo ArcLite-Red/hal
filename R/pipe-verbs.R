@@ -74,11 +74,18 @@ hal_ask <- function(.data, ...) {
       NULL
     }
 
-    # Build data description. Character data is included verbatim: str()
+    # Build data description. Character data is included in full: str()
     # truncates strings at 128 chars, which silently drops most of a long
     # text passed via a variable (e.g. hal_ask(my_text, "summarize")).
+    # Plain vectors are joined verbatim; named vectors and matrices use
+    # their printed form so labels and shape survive (print() does not
+    # truncate strings).
     data_desc <- if (is.character(.data)) {
-      paste(.data, collapse = "\n")
+      if (is.null(names(.data)) && is.null(dim(.data))) {
+        paste(.data, collapse = "\n")
+      } else {
+        paste(utils::capture.output(print(.data)), collapse = "\n")
+      }
     } else {
       tryCatch(
         paste(utils::capture.output(utils::str(.data, max.level = 2L)),
@@ -102,6 +109,10 @@ hal_ask <- function(.data, ...) {
     sections <- c(sections, paste0("\n\n## Data Context\n", data_desc))
     augmented_prompt <- paste(sections, collapse = "")
   }
+
+  # Governance: credential scan before anything is sent (block aborts here,
+  # before a disposable session is created; redact returns cleaned text)
+  augmented_prompt <- .hal_scan_outbound(augmented_prompt)
 
   # Use existing client with a temporary session (fast, no new process)
   session <- .hal_ensure_session()
