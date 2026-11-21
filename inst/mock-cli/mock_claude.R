@@ -7,7 +7,7 @@
 #
 # Scenario name is passed as the first positional arg (via helper's
 # prefix_args), followed by the real claude-style flags the client produces:
-#   -p <text> --output-format stream-json --include-partial-messages
+#   -p --output-format stream-json --include-partial-messages  (prompt on stdin)
 #   --verbose --model <id> --permission-mode <mode>
 #   [--mcp-config <path> --strict-mcp-config --allowedTools <list>]
 #   [--session-id <uuid> | --resume <uuid>]
@@ -33,7 +33,32 @@ get_flag <- function(args, name) {
   args[i + 1L]
 }
 
-prompt_text   <- get_flag(cli_args, "-p") %||% ""
+# The client sends the prompt on stdin with a bare `-p` (like
+# `echo "..." | claude -p`). A value right after -p is still accepted for
+# older invocations, but a following flag is never mistaken for the prompt.
+read_stdin_prompt <- function() {
+  con <- file("stdin", open = "rb")
+  on.exit(close(con))
+  chunks <- list()
+  repeat {
+    b <- readBin(con, "raw", n = 65536L)
+    if (!length(b)) break
+    chunks[[length(chunks) + 1L]] <- b
+  }
+  if (!length(chunks)) return("")
+  txt <- rawToChar(do.call(c, chunks))
+  Encoding(txt) <- "UTF-8"
+  txt
+}
+p_value <- get_flag(cli_args, "-p")
+prompt_text <- if (!is.null(p_value) && !startsWith(p_value, "-")) {
+  p_value
+} else {
+  read_stdin_prompt()
+}
+# Recorded so tests can assert the prompt never travelled as an argument
+.args_file <- Sys.getenv("HAL_MOCK_ARGS_FILE", "")
+if (nzchar(.args_file)) writeLines(enc2utf8(cli_args), .args_file, useBytes = TRUE)
 model_id      <- get_flag(cli_args, "--model") %||% "mock-claude-haiku"
 session_id    <- get_flag(cli_args, "--session-id")
 resume_id     <- get_flag(cli_args, "--resume")

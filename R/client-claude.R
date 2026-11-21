@@ -117,8 +117,19 @@ HalClientClaude <- R6::R6Class(
       # stable across the session so subsequent turns reuse them.
       private$ensure_mcp()
 
+      # The prompt goes to the CLI on stdin, not as an argument: OS limits on
+      # command-line length (~32K chars total on Windows, 128 KiB per arg on
+      # Linux) made long prompts fail at process launch. A temp file (rather
+      # than a "|" pipe) avoids partial writes / backpressure on large
+      # prompts. It is removed once the process has exited (see
+      # cleanup_prompt_file); credentials were already scanned upstream.
+      private$cleanup_prompt_file()
+      private$prompt_file <- tempfile("hal_prompt_", fileext = ".txt")
+      writeBin(charToRaw(enc2utf8(text)), private$prompt_file)
+      on.exit(private$cleanup_prompt_file(), add = TRUE)
+
       args <- c(
-        "-p", text,
+        "-p",
         "--output-format", "stream-json",
         "--include-partial-messages",
         "--verbose",
@@ -154,6 +165,7 @@ HalClientClaude <- R6::R6Class(
       private$process <- processx::process$new(
         command = private$cli_info$command,
         args = args,
+        stdin = private$prompt_file,
         stdout = "|", stderr = "|",
         cleanup = TRUE, cleanup_tree = TRUE
       )
@@ -189,6 +201,7 @@ HalClientClaude <- R6::R6Class(
       if (!is.null(private$process) && private$process$is_alive()) {
         private$process$kill()
       }
+      private$cleanup_prompt_file()
       private$process <- NULL
       private$started <- FALSE
       private$session_id <- NULL
@@ -315,6 +328,24 @@ HalClientClaude <- R6::R6Class(
     mcp_config_path = NULL,
     mcp_script_path = NULL,
     mcp_tools_path = NULL,
+    prompt_file = NULL,
+
+    # Remove the stdin temp file for the last prompt. The CLI keeps its stdin
+    # handle open until it exits, and Windows refuses to delete an open file,
+    # so give a just-finished process a moment to exit first. If the file
+    # still can't be removed, the path is kept and retried on the next
+    # prompt() or stop().
+    cleanup_prompt_file = function(wait_ms = 5000) {
+      f <- private$prompt_file
+      if (is.null(f)) return(invisible(NULL))
+      p <- private$process
+      if (!is.null(p) && p$is_alive()) {
+        tryCatch(p$wait(wait_ms), error = function(e) NULL)
+      }
+      unlink(f)
+      if (!file.exists(f)) private$prompt_file <- NULL
+      invisible(NULL)
+    },
     ipc_dir = NULL,
     ipc_eval_fn = NULL,
     ipc_permission_fn = NULL,
