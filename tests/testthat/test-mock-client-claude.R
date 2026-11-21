@@ -245,3 +245,72 @@ test_that("uuid_v4 does not consume or depend on user RNG state", {
   # And hal:::uuid_v4() must not clobber the user's RNG stream
   expect_identical(.Random.seed, saved_state)
 })
+
+# -- Prompt delivery via stdin (#4) ----------------------------------------------
+
+test_that("prompt is sent on stdin, never as a command-line argument", {
+  args_file <- withr::local_tempfile()
+  withr::local_envvar(HAL_MOCK_ARGS_FILE = args_file)
+  client <- mock_claude_client("echo")
+  marker <- "UNIQUE-PROMPT-MARKER-4f2a"
+  resp <- client$prompt(marker)
+  expect_identical(resp$text, marker)
+  args <- readLines(args_file, encoding = "UTF-8")
+  expect_false(any(grepl(marker, args, fixed = TRUE)))
+  expect_true("-p" %in% args)
+})
+
+test_that("prompts beyond the Windows command-line limit round-trip", {
+  client <- mock_claude_client("echo")
+  big <- paste0("start-", strrep("abcdefghij", 10000), "-end")  # ~100K chars
+  resp <- client$prompt(big)
+  expect_identical(nchar(resp$text), nchar(big))
+  expect_identical(resp$text, big)
+})
+
+test_that("non-ASCII prompt text survives the stdin round-trip", {
+  client <- mock_claude_client("echo")
+  txt <- "café über naïve 日本語 \U0001F600"
+  resp <- client$prompt(txt)
+  expect_identical(enc2utf8(resp$text), enc2utf8(txt))
+})
+
+test_that("the stdin temp file is removed after each prompt", {
+  client <- mock_claude_client("echo")
+  priv <- client$.__enclos_env__$private
+  client$prompt("one")
+  expect_length(priv$prompt_files, 0L)
+  before <- list.files(tempdir(), pattern = "^hal_prompt_")
+  client$prompt("two")
+  after <- list.files(tempdir(), pattern = "^hal_prompt_")
+  expect_length(setdiff(after, before), 0L)
+})
+
+test_that("the stdin temp file is removed when a prompt fails", {
+  client <- mock_claude_client("error")
+  priv <- client$.__enclos_env__$private
+  expect_error(client$prompt("boom"))
+  expect_length(priv$prompt_files, 0L)
+})
+
+test_that("an undeletable prompt file stays pending and is retried later", {
+  client <- mock_claude_client("echo")
+  priv <- client$.__enclos_env__$private
+  # Simulate a file left behind by an earlier prompt whose CLI still held it
+  stale <- tempfile("hal_prompt_", fileext = ".txt")
+  writeLines("old prompt", stale)
+  priv$prompt_files <- stale
+  client$prompt("next")
+  expect_false(file.exists(stale))
+  expect_length(priv$prompt_files, 0L)
+})
+
+test_that("a failure while preparing the prompt leaves nothing pending", {
+  client <- mock_claude_client("echo")
+  priv <- client$.__enclos_env__$private
+  before <- list.files(tempdir(), pattern = "^hal_prompt_")
+  expect_error(client$prompt(123))
+  expect_length(priv$prompt_files, 0L)
+  after <- list.files(tempdir(), pattern = "^hal_prompt_")
+  expect_length(setdiff(after, before), 0L)
+})

@@ -1,5 +1,11 @@
 # hal (development version)
 
+* Claude backend: long prompts no longer fail at launch. The prompt was
+  passed to `claude -p` as a command-line argument, which runs into OS
+  limits (about 32,000 characters for the whole command line on Windows,
+  128 KiB per argument on Linux). It is now sent on stdin, so prompt length
+  is limited only by the model's context window (#4).
+
 * In pipe mode, `hal_ask()` now attaches the model's answer to the returned
   object as `attr(x, "hal_response")`, so
   `x <- mtcars |> hal_ask("...")` keeps the answer as well as the data.
