@@ -124,9 +124,12 @@ HalClientClaude <- R6::R6Class(
       # prompts. It is removed once the process has exited (see
       # cleanup_prompt_file); credentials were already scanned upstream.
       private$cleanup_prompt_file()
-      private$prompt_file <- tempfile("hal_prompt_", fileext = ".txt")
-      writeBin(charToRaw(enc2utf8(text)), private$prompt_file)
+      prompt_file <- tempfile("hal_prompt_", fileext = ".txt")
+      # Track the path and register cleanup *before* writing, so a failed
+      # or interrupted write (full disk, Ctrl+C) still removes the file.
+      private$prompt_files <- c(private$prompt_files, prompt_file)
       on.exit(private$cleanup_prompt_file(), add = TRUE)
+      writeBin(charToRaw(enc2utf8(text)), prompt_file)
 
       args <- c(
         "-p",
@@ -165,7 +168,7 @@ HalClientClaude <- R6::R6Class(
       private$process <- processx::process$new(
         command = private$cli_info$command,
         args = args,
-        stdin = private$prompt_file,
+        stdin = prompt_file,
         stdout = "|", stderr = "|",
         cleanup = TRUE, cleanup_tree = TRUE
       )
@@ -328,22 +331,23 @@ HalClientClaude <- R6::R6Class(
     mcp_config_path = NULL,
     mcp_script_path = NULL,
     mcp_tools_path = NULL,
-    prompt_file = NULL,
+    # stdin temp files not yet deleted (normally just the current prompt's)
+    prompt_files = character(),
 
-    # Remove the stdin temp file for the last prompt. The CLI keeps its stdin
-    # handle open until it exits, and Windows refuses to delete an open file,
-    # so give a just-finished process a moment to exit first. If the file
-    # still can't be removed, the path is kept and retried on the next
-    # prompt() or stop().
+    # Remove pending stdin temp files. The CLI keeps its stdin handle open
+    # until it exits, and Windows refuses to delete an open file, so give a
+    # just-finished process a moment to exit first. Files that still can't
+    # be removed (e.g. a timed-out CLI still running) stay in the pending
+    # list and are retried on the next prompt() or stop() -- the process is
+    # never killed just to free a temp file.
     cleanup_prompt_file = function(wait_ms = 5000) {
-      f <- private$prompt_file
-      if (is.null(f)) return(invisible(NULL))
+      if (!length(private$prompt_files)) return(invisible(NULL))
       p <- private$process
       if (!is.null(p) && p$is_alive()) {
         tryCatch(p$wait(wait_ms), error = function(e) NULL)
       }
-      unlink(f)
-      if (!file.exists(f)) private$prompt_file <- NULL
+      unlink(private$prompt_files)
+      private$prompt_files <- private$prompt_files[file.exists(private$prompt_files)]
       invisible(NULL)
     },
     ipc_dir = NULL,

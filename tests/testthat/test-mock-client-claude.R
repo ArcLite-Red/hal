@@ -279,7 +279,7 @@ test_that("the stdin temp file is removed after each prompt", {
   client <- mock_claude_client("echo")
   priv <- client$.__enclos_env__$private
   client$prompt("one")
-  expect_null(priv$prompt_file)
+  expect_length(priv$prompt_files, 0L)
   before <- list.files(tempdir(), pattern = "^hal_prompt_")
   client$prompt("two")
   after <- list.files(tempdir(), pattern = "^hal_prompt_")
@@ -290,5 +290,27 @@ test_that("the stdin temp file is removed when a prompt fails", {
   client <- mock_claude_client("error")
   priv <- client$.__enclos_env__$private
   expect_error(client$prompt("boom"))
-  expect_null(priv$prompt_file)
+  expect_length(priv$prompt_files, 0L)
+})
+
+test_that("an undeletable prompt file stays pending and is retried later", {
+  client <- mock_claude_client("echo")
+  priv <- client$.__enclos_env__$private
+  # Simulate a file left behind by an earlier prompt whose CLI still held it
+  stale <- tempfile("hal_prompt_", fileext = ".txt")
+  writeLines("old prompt", stale)
+  priv$prompt_files <- stale
+  client$prompt("next")
+  expect_false(file.exists(stale))
+  expect_length(priv$prompt_files, 0L)
+})
+
+test_that("a failure while preparing the prompt leaves nothing pending", {
+  client <- mock_claude_client("echo")
+  priv <- client$.__enclos_env__$private
+  before <- list.files(tempdir(), pattern = "^hal_prompt_")
+  expect_error(client$prompt(123))
+  expect_length(priv$prompt_files, 0L)
+  after <- list.files(tempdir(), pattern = "^hal_prompt_")
+  expect_length(setdiff(after, before), 0L)
 })
